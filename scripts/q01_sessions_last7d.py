@@ -20,7 +20,7 @@ import pathlib, datetime
 import pandas as pd
 
 PARSED   = pathlib.Path("parsed/all.jsonl")      # parser-output
-OUT_XLS  = pathlib.Path("results/answers.xlsx")  # centrale resultaten
+OUT_XLS = pathlib.Path("results/answers_q01.xlsx")  # centrale resultaten
 
 # ------------------------------------------------------------------ #
 # Helper: mapping gemiddelde → survey-categorie

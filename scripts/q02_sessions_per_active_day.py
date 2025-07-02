@@ -17,7 +17,7 @@ import pathlib, datetime
 import pandas as pd
 
 PARSED  = pathlib.Path("parsed/all.jsonl")
-OUT_XLS = pathlib.Path("results/answers.xlsx")
+OUT_XLS = pathlib.Path("results/answers_q02.xlsx")
 
 # ------------------------------------------------ helper -------------
 def to_category(avg: float) -> str:
