@@ -71,7 +71,7 @@ counts = (expl.groupby(["donor_id","labels"])
                 .reset_index(name="n"))
 totals = expl.groupby("donor_id").size().rename("total")
 counts = counts.merge(totals, on="donor_id")
-counts = counts[(counts["n"]>=3) & (counts["n"]/counts["total"]>=0.05)]
+counts = counts[(counts["n"]>=5) & (counts["n"]/counts["total"]>=0.1)]
 
 valid = (counts.groupby("donor_id")["labels"]
                 .apply(list)
