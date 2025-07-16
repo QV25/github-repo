@@ -43,7 +43,10 @@ def to_category(avg: float) -> str:
 df = pd.read_json(PARSED, lines=True)
 
 # Sessiedatum uit timestamp
-df["session_date"] = pd.to_datetime(df["question_time"], unit="s").dt.date
+# neem question_time, en als die ontbreekt gebruik answer_time
+df["ts"] = df["question_time"].fillna(df["answer_time"])
+df = df.dropna(subset=["ts"])                       # alle records zonder tijd weg
+df["session_date"] = pd.to_datetime(df["ts"], unit="s").dt.date
 
 # 2. Bepaal ISO-weekcode (YYYY-WW)
 iso = pd.to_datetime(df["session_date"]).dt.isocalendar()

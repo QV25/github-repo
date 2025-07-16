@@ -1,8 +1,10 @@
 import os, time, random
 import openai
 from dotenv import load_dotenv
-from openai.error import (Timeout, RateLimitError,
-                          APIError, APIConnectionError)
+from openai import (APITimeoutError as Timeout,
+                    RateLimitError,
+                    APIStatusError as APIError,
+                    APIConnectionError)
 
 load_dotenv()                              # leest .env
 openai.api_key = os.getenv("OPENAI_API_KEY")
