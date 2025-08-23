@@ -1,4 +1,26 @@
-# parser-output
-parsed/*.jsonl
-
+# secrets
 .env
+.secrets/
+*.key
+*.pem
+
+# data & outputs (niet tracken)
+data/
+parsed/
+results/
+logs/
+*.jsonl
+*.csv
+*.xlsx
+!results/README.md
+
+# caches / build
+__pycache__/
+*.pyc
+.cache/
+embed_cache/
+.ipynb_checkpoints/
+
+# os/editor
+.DS_Store
+.vscode/

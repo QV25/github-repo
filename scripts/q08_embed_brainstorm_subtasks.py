@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 """
-q07_embed_write_subtasks.py — hybride (embeddings + mini LLM refinement)
+q08_embed_brainstorm_subtasks.py — hybride (embeddings + mini LLM refinement)
 
-Analyseert *alleen donors die in q06 'Writing & professional communication' kozen*.
+Analyseert *alleen donors die in q06 'Brainstorming & personal ideas - fun' kozen*.
 
-Sub-tasks (1..6):
- 1  Outlining ideas or slides
- 2  Drafting full text
- 3  Proof-reading – tone adjustment
- 4  Summarising sources or meeting notes
- 5  Adjusting style for different audiences
- 6  I did not choose “Writing & professional communication”
-
-Output → results/answers_q07.xlsx
+Output → results/answers_q08.xlsx
 """
 import os, sys, pathlib, json, datetime, re
 import numpy as np
@@ -27,22 +19,36 @@ from llm_utils import gpt  # mini LLM refinement
 # -----------------------------------------------------------------------
 
 PARSED   = pathlib.Path("parsed/all.jsonl")
-PROTOS   = pathlib.Path("prototypes_q07.json")
+PROTOS   = pathlib.Path("prototypes_q08.json")
 A6_XLS   = pathlib.Path("results/answers_q06.xlsx")
-OUT_XLS  = pathlib.Path("results/answers_q07.xlsx")
-CACHE_NS = "q07_write_sub"
+OUT_XLS  = pathlib.Path("results/answers_q08.xlsx")
+CACHE_NS = "q08_brainstorm_sub"
 
-# Thresholds
+# lees categorieën uit prototypes (volgorde = 1..K)
+CATEGORIES = json.loads(PROTOS.read_text())
+CATEGORIES = [str(x) for x in CATEGORIES]
+mapping = {i+1: c for i, c in enumerate(CATEGORIES)}
+
+# probeer index voor 'niet gekozen' te vinden (EN/NL)
+def _find_none_idx(categories):
+    for i, c in enumerate(categories, start=1):
+        s = str(c).lower()
+        if "did not choose" in s or "niet gekozen" in s:
+            return i
+    return None
+NONE_IDX = _find_none_idx(CATEGORIES)
+
+# Thresholds + model
 THRESH    = 0.35
 BAND_LOW  = 0.345
 BAND_HIGH = 0.355
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-5-mini")
 
-# Significantie-drempels (per donor, voor sublabels)
+# Significantie-drempels per donor
 MIN_N     = 3
 MIN_SHARE = 0.05
 
-# ---------------- helpers ----------------
+# ------------ helpers ------------
 def _extract_json_array_indices(s: str, n_max: int) -> list[int]:
     """Pak eerste JSON array uit tekst; filter op geldige 1..n indices."""
     try:
@@ -81,51 +87,49 @@ def refine_with_llm(prompt_text: str, categories: list[str], none_idx: int|None)
         out = [i for i in out if i != none_idx]
     return out
 
-def _find_none_idx(categories: list[str]) -> int|None:
-    for i, c in enumerate(categories, start=1):
-        s = str(c).lower()
-        if "did not choose" in s or "niet gekozen" in s:
-            return i
-    return None
+def _canon_label(s: str) -> str:
+    s = str(s).strip().lower()
+    s = s.replace("—", "-").replace("–", "-").replace("“", '"').replace("”", '"')
+    # unify separators: "/" or "-" -> " - "
+    s = re.sub(r"\s*[/\-]\s*", " - ", s)
+    s = re.sub(r"\s+", " ", s)
+    return s
 
-def _writing_donors_from_q06() -> set[str]:
+def _brainstorm_donors_from_q06() -> set[str]:
+    """Donors die exact de hoofdcategorie Brainstorming in q06 hebben (split op '|')."""
     if not A6_XLS.exists():
         raise FileNotFoundError("answers_q06.xlsx niet gevonden. Run eerst q06_embed.py.")
     a6 = pd.read_excel(A6_XLS)
-    # strikte check: split op '|' en match exact de writing-label
-    target = "writing & professional communication"
-    def has_writing(cat: str) -> bool:
-        parts = [re.sub(r"\s+", " ", str(x).strip().lower()) for x in str(cat).split("|")]
+    target = _canon_label("Brainstorming & personal ideas - fun")
+    def has_brain(cat: str) -> bool:
+        parts = [_canon_label(x) for x in str(cat).split("|")]
         return target in parts
-    mask = a6["category"].astype(str).map(has_writing)
+    mask = a6["category"].astype(str).map(has_brain)
     donors = set(a6.loc[mask, "donor_id"].astype(str))
     return donors
 
 # 0) donorset beperken via q06 -------------------------------------------
-writing_donors = _writing_donors_from_q06()
-if not writing_donors:
-    print("⚠︎ Geen donors met Writing in q06. Exporteer lege sheet met alleen headers.")
+brain_donors = _brainstorm_donors_from_q06()
+if not brain_donors:
+    print("⚠︎ Geen donors met Brainstorming in q06. Exporteer lege sheet met alleen headers.")
     OUT_XLS.parent.mkdir(exist_ok=True, parents=True)
     pd.DataFrame(columns=["donor_id","category","survey_question","timestamp"]).to_excel(OUT_XLS, index=False)
     raise SystemExit(0)
 
-# 1) prototypes → embeddings --------------------------------------------
-categories_from_protos = json.loads(PROTOS.read_text())
-CATEGORIES = [str(x) for x in categories_from_protos]  # volgorde 1..6
-mapping = {i+1: c for i, c in enumerate(CATEGORIES)}
-NONE_IDX = _find_none_idx(CATEGORIES)
-
+# 1) prototypes → embeddings
 ec          = EmbedCache(CACHE_NS)
-proto_vecs  = ec.get_embeddings(CATEGORIES)          # (6, D)
+proto_vecs  = ec.get_embeddings(CATEGORIES)          # (K, D)
 
-# 2) prompts verzamelen (ALLEEN writing-donors) --------------------------
+# 2) prompts inlezen (ALLEEN geselecteerde donors)
 df  = pd.read_json(PARSED, lines=True)
-df  = df[df["donor_id"].astype(str).isin(writing_donors)].copy()
+df  = df[df["donor_id"].astype(str).isin(brain_donors)].copy()
 
 if df.empty:
-    print("⚠︎ Geen rijen voor writing-donors; exporteer lege sheet.")
+    print("⚠︎ geen rijen over na donor-filter; output wordt leeg Excel met alleen headers.")
+    valid = pd.DataFrame(columns=["donor_id","category","survey_question","timestamp"])
     OUT_XLS.parent.mkdir(exist_ok=True, parents=True)
-    pd.DataFrame(columns=["donor_id","category","survey_question","timestamp"]).to_excel(OUT_XLS, index=False)
+    valid.to_excel(OUT_XLS, index=False)
+    print(f"✅ klaar → {OUT_XLS}")
     raise SystemExit(0)
 
 df["prompt_short"] = df["question"].str.slice(0, 400)
@@ -140,15 +144,15 @@ dfu["prompt_short"] = (
       .str.replace(r"\s+", " ", regex=True)
       .str.strip()
 )
-dfu = dfu[dfu["prompt_short"] != ""]
+dfu = dfu[dfu["prompt_short"] != ""].copy()
 
-# 3) prompt-embeddings ---------------------------------------------------
+# 3) prompt-embeddings
 prompt_vecs = ec.get_embeddings(dfu["prompt_short"].tolist())   # (N, D)
 
-# 4) cosine-similarity ---------------------------------------------------
-sims   = 1 - cdist(prompt_vecs, proto_vecs, metric="cosine")    # (N, 6)
+# 4) cosine-similarity
+sims   = 1 - cdist(prompt_vecs, proto_vecs, metric="cosine")    # (N, K)
 
-# 4b) hybride labels per prompt (refine alleen bij twijfel) -------------
+# 4b) hybride labels per prompt
 labels_per_prompt = []
 refined_ct = 0
 
@@ -175,16 +179,18 @@ for idx, row in enumerate(tqdm(sims, desc="Labeling (embeddings + refine)")):
 dfu["labels"] = labels_per_prompt
 print(f"ℹ️ refinement: {refined_ct} borderline prompts via {CHAT_MODEL}")
 
-# 5) merge labels terug --------------------------------------------------
+# 5) merge labels terug
 df = df.merge(dfu[["prompt_short", "labels"]],
               on="prompt_short", how="left")
 
-# 6) explode + tellen (per writer-donor) --------------------------------
+# 6) explode + tellen
 expl = (
     df.explode("labels")
       .dropna(subset=["labels"])
       .astype({"labels": "int"})
 )
+if expl.empty:
+    print("⚠︎ na explode geen labels; exporters krijgen ONLY 'no-choice' indien aanwezig.")
 
 counts = (
     expl.groupby(["donor_id", "labels"])
@@ -197,19 +203,19 @@ counts = counts.merge(totals, on="donor_id", how="left")
 # significante subtaken per donor
 counts = counts[(counts["n"] >= MIN_N) & (counts["n"] / counts["total"].clip(lower=1) >= MIN_SHARE)]
 
-# 7) lijst per donor -----------------------------------------------------
+# 7) lijst per donor
 valid = (
     counts.groupby("donor_id")["labels"]
           .apply(list)
           .reset_index()
 )
 
-# → bouw eerst de |-gescheiden string uit labels
+# bouw de |-gescheiden string
 valid["category"] = valid["labels"].apply(
     lambda lst: "|".join(mapping[i] for i in sorted(lst))
 )
 
-# -- verwijder "I did not choose …" als donor óók andere subtaken heeft --
+# verwijder 'no-choice' als donor óók echte subtaken heeft
 valid["category"] = (
     valid["category"]
       .str.replace(r"(^|[|])I did not choose .*?(?=$|[|])", "", regex=True)
@@ -219,21 +225,21 @@ valid["category"] = (
 valid = valid[valid["category"] != ""].copy()
 valid.drop(columns="labels", inplace=True)
 
-# 8) fallback: writing-donors zonder sublabels → label 6 ----------------
-base_donors = set(df["donor_id"].astype(str).unique())  # alleen writing-donors
+# 8) donors zonder sub-labels → NONE_IDX (als aanwezig)
+base_donors = set(df["donor_id"].astype(str).unique())  # na donor-filter
 with_subs   = set(valid["donor_id"].astype(str))
 no_subs     = sorted(base_donors - with_subs)
 
 if no_subs and NONE_IDX:
     extra = pd.DataFrame({
-        "donor_id": no_subs,
+        "donor_id": list(no_subs),
         "category": mapping[NONE_IDX]
     })
     valid = pd.concat([valid, extra], ignore_index=True)
 
-# 9) metadata + export ---------------------------------------------------
-valid = valid.sort_values("donor_id").reset_index(drop=True)
-valid["survey_question"] = "q07_write_subtasks"
+# 9) metadata + export
+valid = valid[["donor_id","category"]].sort_values("donor_id").reset_index(drop=True)
+valid["survey_question"] = "q08_brainstorm_subtasks"
 valid["timestamp"] = datetime.datetime.utcnow()
 
 OUT_XLS.parent.mkdir(exist_ok=True, parents=True)

@@ -1,0 +1,14 @@
+name: thesis-parser
+channels: [conda-forge, defaults]
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - scipy
+  - tqdm
+  - openpyxl
+  - xlsxwriter
+  - pip
+  - pip:
+      - openai>=1.99.0
+      - python-dotenv
